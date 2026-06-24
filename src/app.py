@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.document_loader import load_documents, summarize, SAMPLES_DIR, NOTION_DIR
+from src.document_loader import load_documents, summarize, save_uploaded_file, SAMPLES_DIR, NOTION_DIR, UPLOAD_DIR
 from src.policy_rag_chain import PolicyRAGChain, _is_unsafe
 from src.integrations.open_notebook_client import OpenNotebookClient
 from src.ontology.graph_rag import GraphRAGChain
@@ -44,16 +44,53 @@ elif on_healthy:
 else:
     st.info("Open Notebook 미실행 — FAISS(OpenAI) 직접 사용 중")
 
-# --- 사이드바: 문서 현황 ---
+# --- 사이드바 ---
 with st.sidebar:
+    # ── 문서 업로드 ──────────────────────────────────────────
+    st.header("📤 문서 업로드")
+    uploaded_files = st.file_uploader(
+        "규정집 파일을 업로드하세요",
+        type=["pdf", "docx", "txt", "md"],
+        accept_multiple_files=True,
+        help="PDF · DOCX · TXT · MD 형식 지원. 업로드 후 자동으로 색인됩니다.",
+    )
+    if uploaded_files:
+        saved, failed = [], []
+        for uf in uploaded_files:
+            try:
+                dest = save_uploaded_file(uf)
+                saved.append(uf.name)
+            except Exception as e:
+                failed.append(f"{uf.name}: {e}")
+        if saved:
+            st.success(f"✅ {len(saved)}개 저장 완료:\n" + "\n".join(f"- {n}" for n in saved))
+        if failed:
+            st.error("\n".join(failed))
+        if saved:
+            st.cache_resource.clear()
+            st.rerun()
+
+    st.markdown("---")
+
+    # ── 문서 현황 ─────────────────────────────────────────────
     st.header("📂 문서 현황")
     if st.button("🔄 문서 다시 로드"):
         st.cache_resource.clear()
         st.rerun()
 
-    st.markdown("---")
-    st.markdown(f"**샘플 디렉토리:** `{SAMPLES_DIR}`")
-    st.markdown(f"**Notion 내보내기:** `{NOTION_DIR}`")
+    # 업로드 파일 목록
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    uploaded_list = sorted(UPLOAD_DIR.glob("*.*"))
+    if uploaded_list:
+        with st.expander(f"업로드된 파일 ({len(uploaded_list)}개)"):
+            for f in uploaded_list:
+                col_f, col_del = st.columns([4, 1])
+                col_f.markdown(f"📄 {f.name}")
+                if col_del.button("🗑", key=f"del_{f.name}"):
+                    f.unlink()
+                    st.cache_resource.clear()
+                    st.rerun()
+
     st.markdown("---")
 
     # RAG 백엔드 선택
@@ -78,13 +115,14 @@ def get_chain():
 chain, graph_chain, doc_summary = get_chain()
 
 # 문서 카운트 표시
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("전체 문서", doc_summary["total"])
 col2.metric("샘플 문서", doc_summary["samples"])
 if doc_summary["notion"] == 0:
-    col3.metric("Notion 문서", "0", delta="미연결/미색인", delta_color="off")
+    col3.metric("Notion 문서", "0", delta="미연결", delta_color="off")
 else:
     col3.metric("Notion 문서", doc_summary["notion"])
+col4.metric("업로드 문서", doc_summary.get("uploads", 0))
 
 st.markdown("---")
 
