@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/notion_export/*.md
+data/.faiss_cache/
+*.faiss
+/tmp/
+.DS_Store
