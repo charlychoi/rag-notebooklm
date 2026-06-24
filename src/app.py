@@ -105,16 +105,10 @@ with st.sidebar:
                 st.error("저장 실패:\n" + "\n".join(failed))
 
             if saved:
-                # 2단계: RAG 색인
+                # rerun 시 get_chain이 새 해시로 자동 재색인
                 st.session_state["upload_status"] = "indexing"
-                with st.spinner(f"RAG 색인 중... ({len(saved)}개 문서 임베딩)"):
-                    new_hash = _get_file_hash()
-                    st.session_state["doc_version"] = new_hash
-                    # 캐시를 새 해시로 교체 (get_chain 재호출 유도)
-                    get_chain(new_hash)
-
-                st.session_state["upload_status"] = "done"
                 st.session_state["upload_done_files"] = saved
+                st.session_state["doc_version"] = _get_file_hash()
                 st.rerun()
 
     st.markdown("---")
@@ -164,6 +158,11 @@ if "doc_version" not in st.session_state:
     st.session_state["doc_version"] = _get_file_hash()
 
 chain, graph_chain, doc_summary = get_chain(st.session_state["doc_version"])
+
+# 업로드 색인 완료 처리 (indexing → done)
+if st.session_state.get("upload_status") == "indexing":
+    st.session_state["upload_status"] = "done"
+    st.rerun()
 
 # 문서 카운트 표시
 col1, col2, col3, col4 = st.columns(4)
