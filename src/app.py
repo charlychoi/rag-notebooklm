@@ -20,6 +20,19 @@ logging.basicConfig(level=logging.INFO)
 
 OPEN_NOTEBOOK_URL = os.getenv("OPEN_NOTEBOOK_API_URL", "http://127.0.0.1:5055")
 
+
+def _get_file_hash() -> str:
+    """data/ 디렉토리의 파일 목록+크기로 해시 생성 — 변경 시에만 체인 재빌드."""
+    import hashlib
+    exts = {".pdf", ".docx", ".md", ".txt"}
+    parts = []
+    for root in [SAMPLES_DIR, NOTION_DIR, UPLOAD_DIR]:
+        if root.exists():
+            for f in sorted(root.rglob("*")):
+                if f.suffix.lower() in exts:
+                    parts.append(f"{f.name}:{f.stat().st_size}")
+    return hashlib.md5("|".join(parts).encode()).hexdigest()[:12]
+
 st.set_page_config(page_title="사내 정책 Q&A", page_icon="📋", layout="wide")
 st.title("📋 사내 정책 Q&A (RAG)")
 st.caption("내부 정책 문서를 기반으로 답변합니다. 법적 효력이 있는 HR/법무 의견이 아닙니다.")
@@ -52,30 +65,30 @@ with st.sidebar:
         "규정집 파일을 업로드하세요",
         type=["pdf", "docx", "txt", "md"],
         accept_multiple_files=True,
-        help="PDF · DOCX · TXT · MD 형식 지원. 업로드 후 자동으로 색인됩니다.",
+        help="PDF · DOCX · TXT · MD 형식 지원. 저장 버튼을 누르면 색인됩니다.",
     )
     if uploaded_files:
-        saved, failed = [], []
-        for uf in uploaded_files:
-            try:
-                dest = save_uploaded_file(uf)
-                saved.append(uf.name)
-            except Exception as e:
-                failed.append(f"{uf.name}: {e}")
-        if saved:
-            st.success(f"✅ {len(saved)}개 저장 완료:\n" + "\n".join(f"- {n}" for n in saved))
-        if failed:
-            st.error("\n".join(failed))
-        if saved:
-            st.cache_resource.clear()
-            st.rerun()
+        if st.button("💾 저장 및 색인", type="primary"):
+            saved, failed = [], []
+            for uf in uploaded_files:
+                try:
+                    save_uploaded_file(uf)
+                    saved.append(uf.name)
+                except Exception as e:
+                    failed.append(f"{uf.name}: {e}")
+            if failed:
+                st.error("\n".join(failed))
+            if saved:
+                st.toast(f"✅ {len(saved)}개 저장 완료! 다음 질의부터 반영됩니다.", icon="📄")
+                st.session_state["doc_version"] = _get_file_hash()
+                st.rerun()
 
     st.markdown("---")
 
     # ── 문서 현황 ─────────────────────────────────────────────
     st.header("📂 문서 현황")
     if st.button("🔄 문서 다시 로드"):
-        st.cache_resource.clear()
+        st.session_state["doc_version"] = _get_file_hash()
         st.rerun()
 
     # 업로드 파일 목록
@@ -88,7 +101,7 @@ with st.sidebar:
                 col_f.markdown(f"📄 {f.name}")
                 if col_del.button("🗑", key=f"del_{f.name}"):
                     f.unlink()
-                    st.cache_resource.clear()
+                    st.session_state["doc_version"] = _get_file_hash()
                     st.rerun()
 
     st.markdown("---")
@@ -105,14 +118,18 @@ with st.sidebar:
     st.info("Notion 문서를 추가하려면:\n```\npython scripts/import_composio_notion_docs.py\n```")
 
 
-@st.cache_resource(show_spinner="문서 로딩 중...")
-def get_chain():
+@st.cache_resource(show_spinner="문서 색인 중... (채팅은 완료 후 가능)")
+def get_chain(file_hash: str):  # 해시가 같으면 캐시 재사용, 달라지면 재색인
     docs = load_documents()
     summary = summarize(docs)
     return PolicyRAGChain(docs), GraphRAGChain(docs), summary
 
 
-chain, graph_chain, doc_summary = get_chain()
+# 현재 파일 해시 (세션 state 에 없으면 계산)
+if "doc_version" not in st.session_state:
+    st.session_state["doc_version"] = _get_file_hash()
+
+chain, graph_chain, doc_summary = get_chain(st.session_state["doc_version"])
 
 # 문서 카운트 표시
 col1, col2, col3, col4 = st.columns(4)
