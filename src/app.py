@@ -88,6 +88,42 @@ else:
 
 st.markdown("---")
 
+# --- FAQ 메뉴 ---
+FAQ = {
+    "🟢 심플": [
+        "연차는 1년에 며칠 주어지나요?",
+        "연차는 며칠 전에 신청해야 하나요?",
+        "반차 신청은 어떻게 하나요?",
+        "비밀번호는 얼마나 자주 바꿔야 하나요?",
+        "재택근무는 주 최대 몇 일 가능한가요?",
+    ],
+    "🟡 중간": [
+        "국내 출장 2박 3일 시 숙박비·식비·일비를 합산하면 총 얼마까지 받을 수 있나요?",
+        "비밀번호를 5번 틀려 계정이 잠겼을 때 해제 절차는 무엇인가요?",
+        "초과근무 수당과 보상휴가 중 어느 것이 유리한지 계산 방법을 알려주세요.",
+        "육아휴직 첫 3개월 급여는 얼마나 지급되나요?",
+        "경조사 휴가 종류별 일수를 모두 알려주세요.",
+    ],
+    "🔴 복잡": [
+        "입사 2년차 직원이 병가를 30일 쓰면 그 해 남은 연차는 몇 개인가요?",
+        "출장 중 야간 초과근무를 3시간 했을 때 수당 계산 방법과 정산 절차를 알려주세요.",
+        "신입사원이 입사 첫 달에 출장을 가면 출장비·연차·초과근무 중 어떤 항목이 적용되지 않나요?",
+        "재택근무 중 업무용 노트북이 고장났을 때 IT 계정 보안, 장비 대체, 근태 처리를 동시에 어떻게 해야 하나요?",
+        "경조사 휴가와 연차가 겹치는 날이 있으면 어느 쪽으로 처리되며, 팀장 부재 시 승인은 어떻게 받나요?",
+    ],
+}
+
+with st.expander("💡 FAQ — 자주 묻는 질문 예시", expanded=False):
+    tabs = st.tabs(list(FAQ.keys()))
+    for tab, (level, questions) in zip(tabs, FAQ.items()):
+        with tab:
+            for q in questions:
+                if st.button(q, key=f"faq_{q[:20]}"):
+                    st.session_state["faq_prompt"] = q
+                    st.rerun()
+
+st.markdown("---")
+
 # --- 채팅 UI ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -100,7 +136,10 @@ for msg in st.session_state.messages:
                 for s in msg["sources"]:
                     st.markdown(f"- {s}")
 
-if prompt := st.chat_input("정책에 대해 궁금한 점을 물어보세요..."):
+# FAQ 버튼 클릭 시 자동 입력
+_faq_auto = st.session_state.pop("faq_prompt", None)
+
+if prompt := (st.chat_input("정책에 대해 궁금한 점을 물어보세요...") or _faq_auto):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
