@@ -67,20 +67,54 @@ with st.sidebar:
         accept_multiple_files=True,
         help="PDF · DOCX · TXT · MD 형식 지원. 저장 버튼을 누르면 색인됩니다.",
     )
+
+    # 업로드 상태 표시
+    upload_status = st.session_state.get("upload_status")
+    if upload_status == "indexing":
+        st.info("🔄 RAG 색인 중... 잠시 기다려 주세요.")
+    elif upload_status == "done":
+        done_files = st.session_state.get("upload_done_files", [])
+        st.success(f"✅ 색인 완료 — {len(done_files)}개 파일\n" +
+                   "\n".join(f"- {n}" for n in done_files))
+
     if uploaded_files:
-        if st.button("💾 저장 및 색인", type="primary"):
-            saved, failed = [], []
+        # 선택된 파일 미리보기
+        with st.expander(f"선택된 파일 {len(uploaded_files)}개", expanded=True):
             for uf in uploaded_files:
+                size_kb = round(uf.size / 1024, 1)
+                st.markdown(f"📎 **{uf.name}** ({size_kb} KB)")
+
+        if st.button("💾 저장 및 색인 시작", type="primary"):
+            st.session_state["upload_status"] = "saving"
+            st.session_state["upload_done_files"] = []
+
+            # 1단계: 파일 저장
+            progress = st.progress(0, text="파일 저장 중...")
+            saved, failed = [], []
+            total = len(uploaded_files)
+            for i, uf in enumerate(uploaded_files):
+                progress.progress((i) / total, text=f"저장 중: {uf.name}")
                 try:
                     save_uploaded_file(uf)
                     saved.append(uf.name)
                 except Exception as e:
                     failed.append(f"{uf.name}: {e}")
+            progress.progress(1.0, text=f"저장 완료 ({len(saved)}개)")
+
             if failed:
-                st.error("\n".join(failed))
+                st.error("저장 실패:\n" + "\n".join(failed))
+
             if saved:
-                st.toast(f"✅ {len(saved)}개 저장 완료! 다음 질의부터 반영됩니다.", icon="📄")
-                st.session_state["doc_version"] = _get_file_hash()
+                # 2단계: RAG 색인
+                st.session_state["upload_status"] = "indexing"
+                with st.spinner(f"RAG 색인 중... ({len(saved)}개 문서 임베딩)"):
+                    new_hash = _get_file_hash()
+                    st.session_state["doc_version"] = new_hash
+                    # 캐시를 새 해시로 교체 (get_chain 재호출 유도)
+                    get_chain(new_hash)
+
+                st.session_state["upload_status"] = "done"
+                st.session_state["upload_done_files"] = saved
                 st.rerun()
 
     st.markdown("---")
